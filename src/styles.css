@@ -220,6 +220,27 @@ h1 { margin-bottom: 9px; font-size: clamp(30px, 3.15vw, 42px); font-weight: 700;
 .privacy-strip strong, .privacy-strip small { display: block; }
 .privacy-strip strong { margin-bottom: 3px; color: #c3ddc8; font-size: 9px; font-weight: 600; }
 .privacy-strip small { color: #8fa596; font-size: 8px; line-height: 1.4; }
+.test-suite-state, .capability-test-status { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(245,184,92,.2); border-radius: 999px; padding: 5px 7px; background: rgba(245,184,92,.07); color: #d4ae70; font-family: "DM Mono", monospace; font-size: 6px; letter-spacing: .04em; line-height: 1.3; text-align: center; }
+.test-suite-state[data-state="running"] { border-color: rgba(125,188,218,.26); background: rgba(125,188,218,.08); color: #9ac6dc; }
+.test-suite-state[data-state="passed"], .capability-test-status[data-state="passed"] { border-color: rgba(135,201,151,.24); background: rgba(104,170,120,.09); color: #a6d3af; }
+.test-suite-state[data-state="failed"], .capability-test-status[data-state="failed"] { border-color: rgba(230,117,110,.24); background: rgba(197,83,77,.08); color: #e4a09a; }
+.capability-tests-card .card-intro { margin-bottom: 12px; }
+.run-capability-tests { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 42px; padding: 0 13px; border: 1px solid rgba(139,197,153,.25); border-radius: 9px; background: linear-gradient(100deg, rgba(57,99,67,.37), rgba(39,66,47,.25)); color: #d2e5d6; font: 600 10px "Manrope", sans-serif; cursor: pointer; transition: border-color .18s ease, background .18s ease, opacity .18s ease; }
+.run-capability-tests:hover:not(:disabled), .run-capability-tests:focus-visible { border-color: rgba(154,214,169,.58); background: rgba(70,117,80,.38); outline: none; }
+.run-capability-tests:focus-visible { box-shadow: 0 0 0 3px rgba(136,196,150,.16); }
+.run-capability-tests:disabled { cursor: progress; opacity: .58; }
+.run-capability-tests span { color: #aad3b2; font-size: 17px; line-height: 1; }
+.capability-test-list { display: grid; gap: 0; margin: 10px 0 0; padding: 0; list-style: none; }
+.capability-test-item { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 47px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.055); }
+.capability-test-copy { min-width: 0; }
+.capability-test-copy strong, .capability-test-copy small { display: block; }
+.capability-test-copy strong { margin-bottom: 3px; color: #c7cbd0; font-size: 8px; font-weight: 600; }
+.capability-test-copy small { color: #838b94; font-size: 7px; line-height: 1.45; overflow-wrap: anywhere; }
+.capability-test-status { min-width: 68px; }
+.probe-stage-shell { margin-top: 12px; padding: 9px; border: 1px solid rgba(255,255,255,.07); border-radius: 9px; background: rgba(6,9,12,.45); color: #737c85; font-family: "DM Mono", monospace; font-size: 6px; letter-spacing: .08em; }
+.probe-stage { display: grid; place-items: center; min-height: 90px; margin-top: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.05); border-radius: 6px; background: #11171b; aspect-ratio: 16 / 9; }
+.capability-probe-player { display: block; width: 100%; height: 100%; min-height: 90px; }
+.capability-tests-card .diagnostic-footnote { margin-top: 10px; }
 
 .page-footer { display: flex; justify-content: space-between; width: min(1400px, calc(100% - 64px)); margin: 0 auto; padding: 16px 0 22px; border-top: 1px solid rgba(255,255,255,.06); color: #687078; font-family: "DM Mono", monospace; font-size: 7px; letter-spacing: .11em; }
 .page-footer b { padding: 0 4px; color: var(--orange); font-weight: 400; }

@@ -53,6 +53,12 @@ A compilação configura o caminho `/naruto-online-mobile/` deste repositório. 
 - AS3, comunicação de rede, autenticação, janelas emergentes, áudio e outros recursos de Flash têm compatibilidade variável. A checklist na aplicação mantém estes pontos como **por verificar** até um teste com o cliente original.
 - O Ruffle é um emulador em desenvolvimento; o comportamento e a compatibilidade dependem da versão do runtime e do conteúdo testado.
 
+## Investigação do cliente original
+
+Os resultados das fontes públicas oficiais, os limites técnicos conhecidos e o procedimento para testar futuramente uma amostra autorizada estão em [docs/naruto-online-compatibility-research.md](docs/naruto-online-compatibility-research.md). O cliente inglês original continua sem teste de compatibilidade.
+
+A matriz técnica de APIs do Ruffle, os resultados dos fixtures locais e o que os testes não demonstram estão em [docs/ruffle-capability-lab.md](docs/ruffle-capability-lab.md). Os ensaios do painel são isolados e não contactam os serviços do jogo.
+
 ## Conteúdo e licenças
 
 Não inclui o cliente, imagens, dados, fontes ou música de Naruto Online. Use apenas ficheiros que tenha direito de testar. O Ruffle mantém a licença MIT/Apache-2.0 indicada pelo respetivo pacote; os ícones incluídos foram desenhados para este projeto.

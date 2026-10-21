@@ -1,5 +1,11 @@
 import "./styles.css";
 import { getSwfFileName, getSwfSignature, validateSwfUrl } from "./lib/swf-utils";
+import {
+  CAPABILITY_TESTS,
+  normalizeCapabilityTestResult,
+  type CapabilityTestId,
+  type CapabilityTestStatus,
+} from "./lib/capability-tests";
 
 type RuntimeLoadOptions = {
   data: ArrayBuffer;
@@ -9,8 +15,19 @@ type RuntimeLoadOptions = {
   credentialAllowList: [];
 };
 
+type ProbeLoadOptions = {
+  data: ArrayBuffer;
+  swfFileName: string;
+  base: string;
+  autoplay: "on";
+  allowScriptAccess: true;
+  allowNetworking: "all";
+  credentialAllowList: [];
+};
+
 type RuffleApi = {
-  load(options: RuntimeLoadOptions): Promise<void>;
+  load(options: RuntimeLoadOptions | ProbeLoadOptions): Promise<void>;
+  callExternalInterface?: (name: string, ...args: unknown[]) => unknown;
 };
 
 type RufflePlayerElement = HTMLElement & {
@@ -29,6 +46,7 @@ type RuffleGlobal = {
 declare global {
   interface Window {
     RufflePlayer?: RuffleGlobal;
+  onRuffleCapabilityLabResult?: (id: unknown, passed: unknown, detail: unknown) => void;
   }
 }
 
@@ -152,6 +170,15 @@ app.innerHTML = `
             <p class="diagnostic-footnote">O Safari não expõe todos os erros de ActionScript nem distingue sempre CORS de falhas de rede.</p>
           </section>
 
+          <section class="panel-card capability-tests-card" aria-labelledby="capability-tests-heading">
+            <div class="card-heading"><div><p class="eyebrow"><span>05</span> ENSAIOS ISOLADOS</p><h2 id="capability-tests-heading">Provas do Ruffle</h2></div><span class="test-suite-state" id="test-suite-state" data-state="inconclusive">POR EXECUTAR</span></div>
+            <p class="card-intro">SWFs próprios e recursos estáticos locais. Sem servidores do jogo, contas, credenciais ou sessões.</p>
+            <button class="run-capability-tests" id="run-capability-tests" type="button">Executar testes locais <span aria-hidden="true">→</span></button>
+            <ol class="capability-test-list" id="capability-test-list" aria-live="polite" aria-relevant="additions text"></ol>
+            <div class="probe-stage-shell"><span>SWF DE DEMONSTRAÇÃO · AVM2</span><div class="probe-stage" id="probe-stage" aria-label="Pré-visualização do SWF de teste"></div></div>
+            <p class="diagnostic-footnote">A ponte JavaScript só é ativada para este SWF próprio e confiável. Os SWFs escolhidos pelo utilizador mantêm o acesso externo desativado. Socket e NetConnection ficam inconclusivos sem servidores de demonstração.</p>
+          </section>
+
           <div class="privacy-strip"><span class="privacy-icon" aria-hidden="true">◈</span><span><strong>Sem contas. Sem telemetria.</strong><small>Sem credenciais, cookies ou registos enviados pela aplicação.</small></span></div>
         </aside>
       </div>
@@ -179,8 +206,184 @@ const runtimeTitle = query<HTMLElement>("#runtime-title");
 const runtimeDetail = query<HTMLElement>("#runtime-detail");
 const runtimeSpinner = query<HTMLSpanElement>("#runtime-spinner");
 const diagnosticLog = query<HTMLOListElement>("#diagnostic-log");
+const capabilityTestList = query<HTMLOListElement>("#capability-test-list");
+const testSuiteState = query<HTMLSpanElement>("#test-suite-state");
+const runCapabilityTestsButton = query<HTMLButtonElement>("#run-capability-tests");
+const probeStage = query<HTMLDivElement>("#probe-stage");
 let currentPlayer: RufflePlayerElement | null = null;
+let probePlayer: RufflePlayerElement | null = null;
+let activeCapabilityRun = 0;
+let capabilityRunSequence = 0;
+let hasRunCapabilityTests = false;
+let capabilityTestTimeout: number | null = null;
 let lastDiagnostic = "";
+
+const testResultNodes = new Map<CapabilityTestId, { status: HTMLSpanElement; detail: HTMLSpanElement }>();
+const runnableTestIds = CAPABILITY_TESTS.filter((test) => test.executable).map((test) => test.id);
+const receivedTestIds = new Set<CapabilityTestId>();
+
+function testStatusLabel(status: CapabilityTestStatus): string {
+  return status === "passed" ? "PASSOU" : status === "failed" ? "FALHOU" : "INCONCLUSIVO";
+}
+
+function createCapabilityTestRows(): void {
+  CAPABILITY_TESTS.forEach((test) => {
+    const item = document.createElement("li");
+    item.className = "capability-test-item";
+
+    const copy = document.createElement("span");
+    copy.className = "capability-test-copy";
+    const title = document.createElement("strong");
+    title.textContent = test.title;
+    const detail = document.createElement("small");
+    detail.textContent = test.executable ? "Ainda não executado." : test.description;
+    copy.append(title, detail);
+
+    const status = document.createElement("span");
+    status.className = "capability-test-status";
+    status.dataset.state = "inconclusive";
+    status.textContent = testStatusLabel("inconclusive");
+    item.append(copy, status);
+    capabilityTestList.append(item);
+    testResultNodes.set(test.id, { status, detail });
+  });
+}
+
+function setCapabilityTestResult(id: CapabilityTestId, status: CapabilityTestStatus, detail: string): void {
+  const nodes = testResultNodes.get(id);
+  if (!nodes) return;
+  nodes.status.dataset.state = status;
+  nodes.status.textContent = testStatusLabel(status);
+  nodes.detail.textContent = detail;
+}
+
+function updateTestSuiteSummary(running: boolean): void {
+  if (running) {
+    testSuiteState.dataset.state = "running";
+    testSuiteState.textContent = "A EXECUTAR";
+    return;
+  }
+  const outcomes = runnableTestIds
+    .map((id) => testResultNodes.get(id)?.status.dataset.state)
+    .filter((state): state is CapabilityTestStatus => state === "passed" || state === "failed" || state === "inconclusive");
+  const passed = outcomes.filter((state) => state === "passed").length;
+  const failed = outcomes.filter((state) => state === "failed").length;
+  const inconclusive = outcomes.filter((state) => state === "inconclusive").length;
+  testSuiteState.dataset.state = failed > 0 ? "failed" : passed > 0 ? "passed" : "inconclusive";
+  testSuiteState.textContent = hasRunCapabilityTests
+    ? `${passed} PASSOU · ${failed} FALHOU · ${inconclusive} INCONCLUSIVO`
+    : "POR EXECUTAR";
+}
+
+function finishCapabilityTests(runId: number): void {
+  if (runId !== activeCapabilityRun) return;
+  if (capabilityTestTimeout !== null) window.clearTimeout(capabilityTestTimeout);
+  capabilityTestTimeout = null;
+
+  runnableTestIds.forEach((id) => {
+    if (!receivedTestIds.has(id)) {
+      setCapabilityTestResult(id, "inconclusive", "Sem resultado observável dentro do prazo; não permite atribuir a causa.");
+    }
+  });
+  activeCapabilityRun = 0;
+  runCapabilityTestsButton.disabled = false;
+  updateTestSuiteSummary(false);
+  recordDiagnostic("Ensaios locais concluídos; resultados não demonstram compatibilidade com o jogo original.", "info");
+}
+
+function handleCapabilityTestReport(id: unknown, passed: unknown, detail: unknown): void {
+  if (activeCapabilityRun === 0) return;
+  if (id === "bridge-ready") {
+    let bridgePassed = false;
+    try {
+      const bridgeResponse = probePlayer?.ruffle().callExternalInterface?.("capabilityPing", "from-javascript");
+      bridgePassed = bridgeResponse === "pong:from-javascript";
+    } catch {
+      bridgePassed = false;
+    }
+    receivedTestIds.add("external-interface");
+    setCapabilityTestResult(
+      "external-interface",
+      bridgePassed ? "passed" : "failed",
+      bridgePassed
+        ? "Flash → JavaScript e JavaScript → Flash responderam ao desafio local."
+        : "A chamada JavaScript → Flash não devolveu a resposta esperada.",
+    );
+    if (receivedTestIds.size >= runnableTestIds.length) finishCapabilityTests(activeCapabilityRun);
+    return;
+  }
+
+  const result = normalizeCapabilityTestResult({ id, passed, detail });
+  if (!result) return;
+  receivedTestIds.add(result.id);
+  const observation = result.status === "failed"
+    ? `${result.detail} A falha pode ser de rede/carregamento, não prova incompatibilidade do jogo.`
+    : result.detail;
+  setCapabilityTestResult(result.id, result.status, observation);
+  if (receivedTestIds.size >= runnableTestIds.length) finishCapabilityTests(activeCapabilityRun);
+}
+
+async function runCapabilityTests(): Promise<void> {
+  if (activeCapabilityRun !== 0) return;
+  hasRunCapabilityTests = true;
+  if (!window.RufflePlayer?.newest) {
+    runnableTestIds.forEach((id) => setCapabilityTestResult(id, "inconclusive", "Ruffle não está disponível nesta página."));
+    updateTestSuiteSummary(false);
+    return;
+  }
+
+  const runId = ++capabilityRunSequence;
+  activeCapabilityRun = runId;
+  receivedTestIds.clear();
+  runnableTestIds.forEach((id) => setCapabilityTestResult(id, "inconclusive", "À espera de uma confirmação do SWF próprio."));
+  updateTestSuiteSummary(true);
+  runCapabilityTestsButton.disabled = true;
+  recordDiagnostic("A executar ensaios com SWF próprio e apenas recursos estáticos locais.", "info");
+  capabilityTestTimeout = window.setTimeout(() => finishCapabilityTests(runId), 12000);
+
+  try {
+    const fixtureBase = new URL(`${import.meta.env.BASE_URL}test-fixtures/`, window.location.href);
+    const fixtureUrl = new URL("ruffle-capability-probe.swf", fixtureBase);
+    const response = await fetch(fixtureUrl, {
+      method: "GET",
+      mode: "same-origin",
+      credentials: "omit",
+      redirect: "error",
+      referrerPolicy: "no-referrer",
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!getSwfSignature(bytes)) throw new Error("O cabeçalho do SWF próprio é inválido.");
+
+    const player = window.RufflePlayer.newest().createPlayer();
+    player.className = "ruffle-player capability-probe-player";
+    player.setAttribute("aria-label", "SWF próprio de teste de capacidades Ruffle");
+    probeStage.replaceChildren(player);
+    probePlayer = player;
+    const movieData = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(movieData).set(bytes);
+    await player.ruffle().load({
+      data: movieData,
+      swfFileName: "ruffle-capability-probe.swf",
+      base: fixtureBase.toString(),
+      autoplay: "on",
+      allowScriptAccess: true,
+      allowNetworking: "all",
+      credentialAllowList: [],
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 120) : "Falha não identificada ao preparar o SWF.";
+    runnableTestIds.forEach((id) => {
+      if (!receivedTestIds.has(id)) {
+        setCapabilityTestResult(id, "inconclusive", `A amostra própria não iniciou (${detail}); compatibilidade não determinada.`);
+      }
+    });
+    finishCapabilityTests(runId);
+  }
+}
+
+window.onRuffleCapabilityLabResult = handleCapabilityTestReport;
 
 function setRuntime(state: "loading" | "ready" | "error", title: string, detail: string): void {
   runtimeIndicator.className = `ready-indicator state-${state}`;
@@ -227,7 +430,7 @@ function loadRuffleScript(): Promise<void> {
     autoplay: "off",
     allowNetworking: "internal",
     credentialAllowList: [],
-    contextMenu: false,
+    contextMenu: "off",
     logLevel: "error",
     warnOnUnsupportedContent: true,
   };
@@ -424,6 +627,9 @@ app.querySelectorAll<HTMLButtonElement>(".console-controls button[data-key]").fo
     window.setTimeout(() => sendTouchKey(button, "keyup"), 80);
   });
 });
+
+createCapabilityTestRows();
+runCapabilityTestsButton.addEventListener("click", () => void runCapabilityTests());
 
 window.addEventListener("resize", updateEnvironment, { passive: true });
 window.addEventListener("orientationchange", updateEnvironment, { passive: true });
