@@ -1,0 +1,23 @@
+{
+  "name": "naruto-online-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "node scripts/copy-ruffle.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "copy:ruffle": "node scripts/copy-ruffle.mjs",
+    "test": "vitest run",
+    "postinstall": "node scripts/copy-ruffle.mjs"
+  },
+  "dependencies": {
+    "@ruffle-rs/ruffle": "0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4"
+  }
+}
